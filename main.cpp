@@ -1,7 +1,6 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdint.h>
-#include <algorithm>
 #include <string_view>
 
 class StaticStringBase {

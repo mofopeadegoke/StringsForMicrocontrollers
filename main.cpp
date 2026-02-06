@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <string_view>
 
-class StaticStringBase {
+class string {
 protected:
     char* buffer_;
     size_t capacity_;
@@ -14,6 +14,23 @@ public:
         : buffer_(buf), capacity_(cap), size_(0) {
         buffer_[0] = '\0';
     }
+
+#ifdef ARDUINO
+    //from arduino
+    string(const String &other);
+
+    //to arduino string
+    operator String() const;
+#endif
+
+//check if stl string is available
+#ifdef __cpp_lib_string_view
+    string(const std::string& other) {
+        size_ = 0;
+        buffer_[0] = '\0';      
+        append(other);
+    }
+#endif
 
     StaticStringBase& operator=(const StaticStringBase& other) {
         if (this != &other) {
@@ -77,6 +94,7 @@ public:
     FixedString(const StaticStringBase& other) : StaticStringBase(storage_, N) {
         append(other); 
     }
+    
     FixedString& operator=(const StaticStringBase& other) {
         StaticStringBase::operator=(other);
         return *this;

@@ -8,6 +8,17 @@ class StaticStringBase {
         char* buffer;
         size_t capacity_; // to avoid naming conflict 
         size_t length;
+        // supposed to return a pointer or a boolean? what do you think sir? 
+        char* append_impl(const char* str, size_t str_len) {
+            size_t available_space = capacity_ - length;
+            size_t to_copy = (str_len < available_space) ? str_len : available_space;
+            for (size_t i = 0; i < to_copy; ++i) {
+                buffer[length + i] = str[i];
+            }
+            length += to_copy;
+            buffer[length] = '\0';
+            return buffer;
+        }
 
     public:
         StaticStringBase(char* buf, size_t cap)
@@ -45,6 +56,31 @@ class StaticStringBase {
                 buffer[length] = '\0';
             }
             return *this;
+        }
+        bool concat(const char c) {
+            return append_impl(&c, 1) != nullptr;
+        }
+        bool concat(const char* str) {
+            size_t str_len = 0;
+            while (str[str_len] != '\0') {
+                ++str_len;
+            }
+            return append_impl(str, str_len) != nullptr;
+        }
+        bool concat(int num) {
+            char num_str[12]; // enough for 32-bit int
+            int len = snprintf(num_str, sizeof(num_str), "%d", num);
+            if (len < 0) return false; // encoding error
+            return append_impl(num_str, static_cast<size_t>(len)) != nullptr;
+        }
+        bool operator+=(const char c) {
+            return concat(c);
+        }
+        bool operator+=(const char* str) {
+            return concat(str);
+        }
+        bool operator+=(int num) {
+            return concat(num);
         }
 
 };

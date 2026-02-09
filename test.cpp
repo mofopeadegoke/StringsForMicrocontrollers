@@ -25,6 +25,14 @@ class StaticStringBase {
             : buffer(buf), capacity_(cap), length(0) {
             buffer[0] = '\0';
         }
+
+        StaticStringBase(const StaticStringBase& other)
+            : buffer(other.buffer), capacity_(other.capacity_), length(other.length) {
+            for (size_t i = 0; i < length; ++i) {
+                buffer[i] = other.buffer[i];
+            }
+            buffer[length] = '\0';
+        }
         size_t size() const { return length; };
         size_t capacity() const { return capacity_; };
         char *c_str() const { return buffer; };
@@ -68,10 +76,13 @@ class StaticStringBase {
             return append_impl(str, str_len) != nullptr;
         }
         bool concat(int num) {
-            char num_str[12]; // enough for 32-bit int
+            char num_str[12];
             int len = snprintf(num_str, sizeof(num_str), "%d", num);
             if (len < 0) return false; // encoding error
             return append_impl(num_str, static_cast<size_t>(len)) != nullptr;
+        }
+        bool concat(const StaticStringBase& other) {
+            return append_impl(other.buffer, other.length) != nullptr;
         }
         bool operator+=(const char c) {
             return concat(c);
@@ -81,6 +92,36 @@ class StaticStringBase {
         }
         bool operator+=(int num) {
             return concat(num);
+        }
+        bool operator+=(const StaticStringBase& other) {
+            return concat(other);
+        }
+        bool operator==(const StaticStringBase& other) const {
+            if (length != other.length) return false;
+            for (size_t i = 0; i < length; ++i) {
+                if (buffer[i] != other.buffer[i]) return false;
+            }
+            return true;
+        }
+        bool operator==(const char* str) const {
+            size_t i = 0;
+            while (str[i] != '\0' && i < length) {
+                if (buffer[i] != str[i]) return false;
+                ++i;
+            }
+            return str[i] == '\0' && i == length;
+        }
+        bool operator!=(const StaticStringBase& other) const {
+            return !(*this == other);
+        }
+        bool operator!=(const char* str) const {
+            return !(*this == str);
+        }
+        int indexOf(char c) const {
+            for (size_t i = 0; i < length; ++i) {
+                if (buffer[i] == c) return static_cast<int>(i);
+            }
+            return -1;
         }
 
 };

@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <iostream>
-
+#include "string.h"
 class string_view { //basically const string
     const char* buffer;
 };
@@ -203,6 +203,48 @@ class DynamicString : public string {
         }
         ~DynamicString() {
             delete[] buffer;
+        }
+        void resize(size_t new_cap) {
+            if (new_cap <= capacity_) return; // Never shrink
+            char* new_buf = new char[new_cap + 1];            
+            strcpy(new_buf, buffer);
+            delete[] buffer;
+            buffer = new_buf;
+            capacity_ = new_cap;
+        }
+        bool concat(const char* str) {
+            size_t str_len = strlen(str);
+            // used a hybrid approach for resizing that I think will be best for microcontrollers.
+            if (length + str_len > capacity_) {
+                size_t new_cap;
+                if (capacity_ < 64) {
+                    new_cap = capacity_ * 2;
+                } else {
+                    new_cap = capacity_ + 64; 
+                }
+                if (new_cap < length + str_len) {
+                    new_cap = length + str_len + 8; // Fallback
+                }
+                
+                resize(new_cap);
+            }
+            return string::concat(str);
+        }
+        bool concat(char c) {
+            if (length + 1 > capacity_) {
+                size_t new_cap;
+                if (capacity_ < 64) {
+                    new_cap = capacity_ * 2;
+                } else {
+                    new_cap = capacity_ + 64; 
+                }
+                if (new_cap < length + 1) {
+                    new_cap = length + 1 + 8;
+                }
+                
+                resize(new_cap);
+            }
+            return string::concat(c);
         }
 
 };

@@ -3,7 +3,11 @@
 #include <stdint.h>
 #include <iostream>
 
-class StaticStringBase {
+class string_view { //basically const string
+    const char* buffer;
+};
+
+class string : public string_view{
     protected:
         char* buffer;
         size_t capacity_; // to avoid naming conflict 
@@ -20,13 +24,21 @@ class StaticStringBase {
             return buffer;
         }
 
-    public:
-        StaticStringBase(char* buf, size_t cap)
+        string(size_t cap, char* buf)
             : buffer(buf), capacity_(cap), length(0) {
             buffer[0] = '\0';
         }
 
-        StaticStringBase(const StaticStringBase& other)
+    public:
+#ifdef STL
+
+#endif
+
+        string(const char *cstr);
+
+        string(const char *cstr, int size);
+
+        string(const string& other)
             : buffer(other.buffer), capacity_(other.capacity_), length(other.length) {
             for (size_t i = 0; i < length; ++i) {
                 buffer[i] = other.buffer[i];
@@ -43,7 +55,7 @@ class StaticStringBase {
             }
             return '\0';
         }
-        StaticStringBase& operator=(const char* str) {
+        string& operator=(const char* str) {
             size_t i = 0;
             while (str[i] != '\0' && i < capacity_) {
                 buffer[i] = str[i];
@@ -53,7 +65,7 @@ class StaticStringBase {
             buffer[length] = '\0';
             return *this;
         }
-        StaticStringBase& operator=(const StaticStringBase& other) {
+        string& operator=(const string& other) {
             if (this != &other) {
                 size_t i = 0;
                 while (i < other.length && i < capacity_) {
@@ -81,22 +93,14 @@ class StaticStringBase {
             if (len < 0) return false; // encoding error
             return append_impl(num_str, static_cast<size_t>(len)) != nullptr;
         }
-        bool concat(const StaticStringBase& other) {
+        bool concat(const string& other) {
             return append_impl(other.buffer, other.length) != nullptr;
         }
-        bool operator+=(const char c) {
-            return concat(c);
-        }
-        bool operator+=(const char* str) {
-            return concat(str);
-        }
-        bool operator+=(int num) {
-            return concat(num);
-        }
-        bool operator+=(const StaticStringBase& other) {
+
+        bool operator+=(const string& other) {
             return concat(other);
         }
-        bool operator==(const StaticStringBase& other) const {
+        bool operator==(const string& other) const {
             if (length != other.length) return false;
             for (size_t i = 0; i < length; ++i) {
                 if (buffer[i] != other.buffer[i]) return false;
@@ -111,7 +115,7 @@ class StaticStringBase {
             }
             return str[i] == '\0' && i == length;
         }
-        bool operator!=(const StaticStringBase& other) const {
+        bool operator!=(const string& other) const {
             return !(*this == other);
         }
         bool operator!=(const char* str) const {
@@ -123,15 +127,58 @@ class StaticStringBase {
             }
             return -1;
         }
+        bool startsWith(const char* prefix) const {
+            size_t i = 0;
+            while (prefix[i] != '\0') {
+                if (i >= length || buffer[i] != prefix[i]) return false;
+                ++i;
+            }
+            return true;
+        }
+        //find
+        //find_first_of
+        //replace
+        void trim() {
+            size_t start = 0;
+            while (start < length && (buffer[start] == ' ' || buffer[start] == '\t' || buffer[start] == '\n' || buffer[start] == '\r')) {
+                ++start;
+            }
+            size_t end = length;
+            while (end > start && (buffer[end - 1] == ' ' || buffer[end - 1] == '\t' || buffer[end - 1] == '\n' || buffer[end - 1] == '\r')) {
+                --end;
+            }
+            size_t new_length = end - start;
+            for (size_t i = 0; i < new_length; ++i) {
+                buffer[i] = buffer[start + i];
+            }
+            length = new_length;
+            buffer[length] = '\0';
+        }
 
 };
 
+//string to_string(int) ...
+
+//std::print std::format
+
+void print(const string_view &str) {
+
+}
+
+//string s;
+//print(s);
+//print("hello");
+//print(F_("hello"));
+
+//std::string ss;
+//print(ss);
+
 
 template <size_t N>
-class FixedString : public StaticStringBase {
+class FixedString : public string {
     public:
-        FixedString() : StaticStringBase(storage, N) {}
-        FixedString(const FixedString &other) : StaticStringBase(storage, N) {
+        FixedString() : string(storage, N) {}
+        FixedString(const FixedString &other) : string(storage, N) {
             *this = other;
         }
     private:
@@ -139,6 +186,16 @@ class FixedString : public StaticStringBase {
 };
 
 
+class DynamicString : public string {
+    
+};
+
 int main() {
+    //FixedString<8> command = "move 100; delay(1000); stop";
+    //command += "world";
+
+    FixedString<16> str1;
+    str1.concat("Hello world!!!!");
+    std::cout << "str1: " << str1.c_str() << " (size: " << str1.size() << ", capacity: " << str1.capacity() << ")\n";
     return 0;
 }

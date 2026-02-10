@@ -1,0 +1,94 @@
+Phase 1: The Foundation (Skeleton)
+Goal: Get the class to compile, hold text, and manage its own memory safely.
+
+Create the Base Class (StaticStringBase)
+
+Add the protected members: a pointer to the buffer, a variable for capacity, and a variable for current length.
+
+Write the constructor: It must take a pointer and a size, then initialize the length to 0 and place a null-terminator (\0) at index 0.
+
+Task: Implement length(), capacity(), and c_str() (accessors).
+
+Task: Implement operator[] so you can read specific characters (e.g., char c = str[0];).
+
+Create the Template Class (FixedString<N>)
+
+Inherit from StaticStringBase.
+
+Define the actual char array storage[N+1] inside this class.
+
+Task: Write the constructor that passes storage and N up to the Base Class.
+
+Task: Write a Copy Constructor that accepts const StaticStringBase&. Crucial: This allows a FixedString<32> to be created from a FixedString<16>.
+
+Implement Assignment
+
+Task: In the Base Class, implement operator=(const char*) (standard C-string assignment).
+
+Task: In the Base Class, implement operator=(const StaticStringBase&) (copying from another object).
+
+Rule: Ensure you copy the data bytes, not the pointer!
+
+Phase 2: Growth (Concatenation)
+Goal: Make str += "abc" and str += 123 work.
+
+Core Append Logic
+
+Task: Write a protected helper function (e.g., append_impl).
+
+Logic: Check if current_length + new_length fits in capacity. If yes, memcpy the data and update the length. If no, decide whether to truncate or do nothing. Always ensure the null-terminator is added at the end.
+
+The "Concat" Functions
+
+Task: Implement concat(char c).
+
+Task: Implement concat(const char* str).
+
+Task: Implement concat(int num).
+
+Hint for numbers: Look up snprintf. It allows you to format a number directly into your buffer safely (e.g., snprintf(buffer + len, remaining_space, "%d", num)).
+
+Operator Overloads
+
+Task: Implement operator+= for char, const char*, and int. These should just be thin wrappers that call your concat functions.
+
+Phase 3: Comparison & Search (The Logic)
+Goal: Make if (str == "cmd") and parsing work.
+
+Equality Checks
+
+Task: Implement operator== to compare against another StaticStringBase.
+
+Task: Implement operator== to compare against a const char*.
+
+Hint: Use strcmp inside these functions.
+
+Search Tools
+
+Task: Implement indexOf(char c). Hint: Loop through the buffer or use strchr.
+
+Task: Implement startsWith(const char* prefix). Hint: Use strncmp.
+
+Phase 4: Utilities (Data Manipulation)
+Goal: Add the tools needed to clean up data.
+
+Trimming
+
+Task: Implement trim().
+
+Logic: Find the first non-space character and the last non-space character. Use memmove (not memcpy) to shift that block to the start of the buffer, then place a null-terminator after it.
+
+Conversions
+
+Task: Implement toInt(). Hint: Use atol or strtol on your buffer.
+
+Modern C++ Support (Optional)
+
+Task: Add a conversion operator to std::string_view. This lets your string work instantly with modern C++ libraries.
+
+Phase 5: Verification
+Goal: Prove it is safe.
+
+The Overflow Test: Create a FixedString<5>. Try to append "Hello World". Ensure the string contains "Hello" (or "Hell") and does not crash or corrupt memory.
+
+The Mix-and-Match Test: Assign a small string to a big string, and a big string to a small string. Ensure the data copies correctly and respects the limits of the destination.

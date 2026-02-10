@@ -154,6 +154,7 @@ class string : public string_view{
             length = new_length;
             buffer[length] = '\0';
         }
+        virtual ~string() {};
 
 };
 
@@ -187,7 +188,23 @@ class FixedString : public string {
 
 
 class DynamicString : public string {
-    
+    public:
+        DynamicString(size_t initial_capacity) : string(initial_capacity, new char[initial_capacity + 1]) {
+            buffer[0] = '\0';
+        }
+        DynamicString(const string& other) 
+            : string(new char[other.size() + 1], other.size()) {
+            string::operator=(other);
+        }
+        // to override the copy constructor of string, otherwise it will just copy the pointer and cause double free issue
+        DynamicString(const DynamicString& other) 
+            : string(new char[other.capacity() + 1], other.capacity()) {
+            string::operator=(other);
+        }
+        ~DynamicString() {
+            delete[] buffer;
+        }
+
 };
 
 int main() {

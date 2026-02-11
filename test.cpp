@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <functional>
 #include <stddef.h>
 #include <stdint.h>
 #include <iostream>
@@ -12,10 +13,13 @@ class string : public string_view{
         char* buffer;
         size_t capacity_; // to avoid naming conflict 
         size_t length;
-        // supposed to return a pointer or a boolean? what do you think sir? 
         char* append_impl(const char* str, size_t str_len) {
             size_t available_space = capacity_ - length;
             size_t to_copy = (str_len < available_space) ? str_len : available_space;
+            if (str_len > available_space) {
+                std::cerr << "Not enough capacity to append string\n";
+                return nullptr;
+            }
             for (size_t i = 0; i < to_copy; ++i) {
                 buffer[length + i] = str[i];
             }
@@ -34,9 +38,13 @@ class string : public string_view{
 
 #endif
 
-        string(const char *cstr);
+        string(const char *cstr) : string(strlen(cstr), new char[strlen(cstr) + 1]) {
+            string::operator=(cstr);
+        }
 
-        string(const char *cstr, int size);
+        string(const char *cstr, int size) : string(size, new char[size + 1]) {
+            string::operator=(cstr);
+        }
 
         string(const string& other)
             : buffer(other.buffer), capacity_(other.capacity_), length(other.length) {
@@ -93,6 +101,12 @@ class string : public string_view{
             if (len < 0) return false; // encoding error
             return append_impl(num_str, static_cast<size_t>(len)) != nullptr;
         }
+        bool concat(float num) {
+            char num_str[32];
+            int len = snprintf(num_str, sizeof(num_str), "%f", num);
+            if (len < 0) return false; // encoding error
+            return append_impl(num_str, static_cast<size_t>(len)) != nullptr;
+        }
         bool concat(const string& other) {
             return append_impl(other.buffer, other.length) != nullptr;
         }
@@ -135,9 +149,32 @@ class string : public string_view{
             }
             return true;
         }
-        //find
+        int find(const char* substr) const {
+            if (substr == nullptr || *substr == '\0') {
+                return 0;
+            }
+            char* found = strstr(buffer, substr);
+            if (found != nullptr) {
+                return static_cast<int>(found - buffer);
+            }
+            return -1;
+        }
+        
+        
         //find_first_of
         //replace
+        virtual bool replace(const char* old_str, const char* new_str) {
+            int index = find(old_str);
+            if (index == -1) return false;
+
+            size_t old_len = strlen(old_str);
+            size_t new_len = strlen(new_str);
+            size_t projected_len = length - old_len + new_len;
+            if (projected_len > capacity_) {
+                return false; 
+            }   
+            return string::replace(old_str, new_str);
+        }
         void trim() {
             size_t start = 0;
             while (start < length && (buffer[start] == ' ' || buffer[start] == '\t' || buffer[start] == '\n' || buffer[start] == '\r')) {
@@ -154,11 +191,29 @@ class string : public string_view{
             length = new_length;
             buffer[length] = '\0';
         }
+        string to_string(int num) const {
+            char num_str[12];
+            int len = snprintf(num_str, sizeof(num_str), "%d", num);
+            if (len < 0) return string(""); // encoding error
+            return string(num_str, static_cast<size_t>(len));
+        }
+        string to_string(float num) const {
+            char num_str[32];
+            int len = snprintf(num_str, sizeof(num_str), "%f", num);
+            if (len < 0) return string(""); // encoding error
+            return string(num_str, static_cast<size_t>(len));
+        }
+        string to_string(const char* str) const {
+            return string(str);
+        }
+        string to_string(const char c) const {
+            char str[2] = {c, '\0'};
+            return string(str);
+        }
         virtual ~string() {};
 
 };
 
-//string to_string(int) ...
 
 //std::print std::format
 
@@ -201,48 +256,47 @@ class DynamicString : public string {
             : string(new char[other.capacity() + 1], other.capacity()) {
             string::operator=(other);
         }
+        DynamicString(const char* cstr) : string(strlen(cstr), new char[strlen(cstr) + 1]) {
+            string::operator=(cstr);
+        }
         ~DynamicString() {
             delete[] buffer;
         }
-        void resize(size_t new_cap) {
+        void resize(size_t min_capacity) {
+            if (min_capacity <= capacity_) return;
+            // used a hybrid approach for resizing that I think will be best for microcontrollers.
+            size_t new_cap;
+            if (capacity_ == 0) {
+                new_cap = min_capacity; // Initial allocation
+            } else if (capacity_ < 64) {
+                new_cap = capacity_ * 2;
+            } else {
+                new_cap = capacity_ + 16; 
+            }
             if (new_cap <= capacity_) return; // Never shrink
+            if (new_cap < min_capacity) {
+                new_cap = min_capacity + 16; // Fallback
+            }
             char* new_buf = new char[new_cap + 1];            
             strcpy(new_buf, buffer);
             delete[] buffer;
+            if (new_buf == nullptr) {
+                std::cerr << "Failed to allocate memory for resizing string\n";
+                return;
+            }
             buffer = new_buf;
             capacity_ = new_cap;
         }
         bool concat(const char* str) {
             size_t str_len = strlen(str);
-            // used a hybrid approach for resizing that I think will be best for microcontrollers.
             if (length + str_len > capacity_) {
-                size_t new_cap;
-                if (capacity_ < 64) {
-                    new_cap = capacity_ * 2;
-                } else {
-                    new_cap = capacity_ + 64; 
-                }
-                if (new_cap < length + str_len) {
-                    new_cap = length + str_len + 8; // Fallback
-                }
-                
-                resize(new_cap);
+                resize(length + str_len);
             }
             return string::concat(str);
         }
         bool concat(char c) {
             if (length + 1 > capacity_) {
-                size_t new_cap;
-                if (capacity_ < 64) {
-                    new_cap = capacity_ * 2;
-                } else {
-                    new_cap = capacity_ + 64; 
-                }
-                if (new_cap < length + 1) {
-                    new_cap = length + 1 + 8;
-                }
-                
-                resize(new_cap);
+                resize(length + 1);
             }
             return string::concat(c);
         }

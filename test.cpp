@@ -46,11 +46,19 @@ class string : public string_view{
             string::operator=(cstr);
         }
 
-        string(const string& other)
+        string(const string& other) 
             : buffer(other.buffer), capacity_(other.capacity_), length(other.length) {
-            for (size_t i = 0; i < length; ++i) {
-                buffer[i] = other.buffer[i];
+            if (other.length > capacity_) {
+                printf("WARNING: String truncation in constructor! Cap: %zu, Src: %zu\n", capacity_, other.length);
             }
+
+            size_t to_copy = (other.length < capacity_) ? other.length : capacity_;
+
+            if (to_copy > 0) {
+                memcpy(buffer, other.buffer, to_copy);
+            }
+
+            length = to_copy;
             buffer[length] = '\0';
         }
         size_t size() const { return length; };

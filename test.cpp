@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <iostream>
 #include "string.h"
+
+
 class string_view { //basically const string
     const char* buffer;
 };
@@ -77,9 +79,7 @@ class string : public string_view{
                 buffer[0] = '\0';
                 return *this;
             }
-
             size_t str_len = strlen(str);
-
             // Check if the incoming string is longer than what we can hold
             if (str_len > capacity_) {
                 printf("WARNING: String truncation! Source length %zu exceeds capacity %zu\n", str_len, capacity_);
@@ -213,29 +213,35 @@ class string : public string_view{
             length = new_length;
             buffer[length] = '\0';
         }
-        string to_string(int num) const {
-            char num_str[12];
-            int len = snprintf(num_str, sizeof(num_str), "%d", num);
-            if (len < 0) return string(""); // encoding error
-            return string(num_str, static_cast<size_t>(len));
-        }
-        string to_string(float num) const {
-            char num_str[32];
-            int len = snprintf(num_str, sizeof(num_str), "%f", num);
-            if (len < 0) return string(""); // encoding error
-            return string(num_str, static_cast<size_t>(len));
-        }
-        string to_string(const char* str) const {
-            return string(str);
-        }
-        string to_string(const char c) const {
-            char str[2] = {c, '\0'};
-            return string(str);
-        }
         virtual ~string() {};
 
 };
 
+
+namespace str_utils {
+    string to_string(int num) {
+        char num_str[12];
+        int len = snprintf(num_str, sizeof(num_str), "%d", num);
+        if (len < 0) return string("");  // encoding error
+        return string(num_str);
+    }
+
+    string to_string(float num) {
+        char num_str[32];
+        int len = snprintf(num_str, sizeof(num_str), "%.2f", num); 
+        if (len < 0) return string(""); // encoding error
+        return string(num_str); 
+    }
+
+    string to_string(const char* str) {
+        return string(str);
+    }
+
+    string to_string(const char c) {
+        char str[2] = {c, '\0'};
+        return string(str);
+    }
+}
 
 //std::print std::format
 

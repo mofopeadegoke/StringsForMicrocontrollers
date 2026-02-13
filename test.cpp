@@ -72,13 +72,27 @@ class string : public string_view{
             return '\0';
         }
         string& operator=(const char* str) {
-            size_t i = 0;
-            while (str[i] != '\0' && i < capacity_) {
-                buffer[i] = str[i];
-                ++i;
+            if (str == nullptr) {
+                length = 0;
+                buffer[0] = '\0';
+                return *this;
             }
-            length = i;
+
+            size_t str_len = strlen(str);
+
+            // Check if the incoming string is longer than what we can hold
+            if (str_len > capacity_) {
+                printf("WARNING: String truncation! Source length %zu exceeds capacity %zu\n", str_len, capacity_);
+            }
+            size_t to_copy = (str_len < capacity_) ? str_len : capacity_;
+
+            if (to_copy > 0) {
+                memcpy(buffer, str, to_copy);
+            }
+
+            length = to_copy;
             buffer[length] = '\0';
+
             return *this;
         }
         string& operator=(const string& other) {

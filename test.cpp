@@ -216,6 +216,37 @@ class string : public string_view {
         }
 };
 
+namespace str_utils {
+    // Helper to convert Integer to your string class
+    string to_string(int num) {
+        char num_str[12];
+        int len = snprintf(num_str, sizeof(num_str), "%d", num);
+        if (len < 0) return string("");  // encoding error
+        return string(num_str);
+    }
+
+    // Helper for Float
+    // Note: On some microcontrollers (like Arduino Uno), %f might not be supported by default.
+    // If you see "?" output, replace snprintf with dtostrf().
+    string to_string(float num) {
+        char num_str[32];
+        int len = snprintf(num_str, sizeof(num_str), "%.2f", num); 
+        if (len < 0) return string(""); // encoding error
+        return string(num_str); 
+    }
+
+    // Helper for C-Strings (Just wraps them in your class)
+    string to_string(const char* str) {
+        return string(str);
+    }
+
+    // Helper for Single Characters
+    string to_string(const char c) {
+        char str[2] = {c, '\0'};
+        return string(str);
+    }
+}
+
 template <size_t N>
 class FixedString : public string {
     public:
@@ -314,12 +345,10 @@ class DynamicString : public string {
             
             return string::concat(c);
         }
-        
-        // Note: For int/float, we can rely on the base class because 
-        // string::concat(int) eventually calls string::concat(char*), 
-        // which might resolve back to here if we make it virtual, 
-        // OR we should override them here too to be safe.
-        // For now, these two cover the raw string building blocks.
+        bool concat(const string& other) {
+            return concat(other.c_str());
+        }
+
 };
 
 // Global Print using View

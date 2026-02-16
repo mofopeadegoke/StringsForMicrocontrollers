@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <cstdio>
 #include <functional>
 #include <stddef.h>
 #include <stdint.h>
@@ -65,13 +66,18 @@ class string : public string_view{
         }
         size_t size() const { return length; };
         size_t capacity() const { return capacity_; };
-        char *c_str() const { return buffer; };
+        char *c_str() const { return buffer; };     
 
         char operator[](size_t index) const {
-            if (index < length) {
-                return buffer[index];
+            // No bounds checking, expect caller to ensure index is valid
+            return buffer[index];
+        }
+        char at(size_t index) const {
+            if (index >= length) {
+                printf("ERROR: Index out of bounds! Index: %zu, Length: %zu\n", index, length);
+                return '\0';  // Return null character on out-of-bounds access
             }
-            return '\0';
+            return buffer[index];
         }
         string& operator=(const char* str) {
             if (str == nullptr) {

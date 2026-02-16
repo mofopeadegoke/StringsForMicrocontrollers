@@ -176,11 +176,11 @@ class string : public string_view {
             return *this;
         }
 
-        bool concat(const char c) { return append_impl(&c, 1) != nullptr; }
-        bool concat(const char* str) { return append_impl(str, strlen(str)) != nullptr; }
-        bool concat(const string& other) { return append_impl(other.buffer, other.length) != nullptr; }
-        
-        bool concat(int num) {
+        virtual bool concat(const char c) { return append_impl(&c, 1) != nullptr; }
+        virtual bool concat(const char* str) { return append_impl(str, strlen(str)) != nullptr; }
+        virtual bool concat(const string& other) { return append_impl(other.buffer, other.length) != nullptr; }
+
+        virtual bool concat(int num) {
             char num_str[12];
             int len = snprintf(num_str, sizeof(num_str), "%d", num);
             if (len < 0) return false;
@@ -240,19 +240,86 @@ class DynamicString : public string {
     public:
         DynamicString(size_t initial_capacity) 
             : string(initial_capacity, new char[initial_capacity + 1]) {
-            // We set m_owns_memory = false in the base because WE want to manage delete[] here?
-            // actually, simpler to let base handle it if we set m_owns_memory = true.
-            // But for resizing logic, let's keep it manual.
-            m_owns_memory = false; // We will handle delete in OUR destructor or resize
+            m_owns_memory = true;
             buffer[0] = '\0';
             sync_view();
         }
 
-        ~DynamicString() {
-            delete[] buffer;
+        DynamicString(const char* cstr) 
+            : string(strlen(cstr), new char[strlen(cstr) + 1]) {
+            m_owns_memory = true;
+            string::operator=(cstr);
         }
 
-        // ... Resize Logic ...
+        DynamicString(const string& other) 
+            : string(new char[other.size() + 1], other.size()) { 
+             m_owns_memory = true;
+             string::operator=(other); 
+        }
+
+        ~DynamicString() {
+            if (buffer) {
+                delete[] buffer;
+                buffer = nullptr;
+            }
+        }
+
+        void resize(size_t min_capacity) {
+            if (min_capacity <= capacity_) return;
+            size_t new_cap;
+            if (capacity_ == 0) {
+                new_cap = min_capacity;
+            } else if (capacity_ < 64) {
+                new_cap = capacity_ * 2;
+            } else {
+                new_cap = capacity_ + 16; 
+            }
+            
+            if (new_cap < min_capacity) {
+                new_cap = min_capacity + 16; 
+            }
+
+            char* new_buf = new char[new_cap + 1];
+            if (!new_buf) return;
+
+            if (length > 0) {
+                memcpy(new_buf, buffer, length);
+            }
+            new_buf[length] = '\0';
+
+            delete[] buffer;
+
+            buffer = new_buf;
+            capacity_ = new_cap;
+            
+            sync_view();
+        }
+
+        
+        bool concat(const char* str) {
+            if (str == nullptr) return false;
+            size_t str_len = strlen(str);
+            
+            if (length + str_len > capacity_) {
+                resize(length + str_len);
+            }
+            
+            return string::concat(str);
+        }
+
+        bool concat(char c) {
+            if (length + 1 > capacity_) {
+                resize(length + 1);
+            }
+            
+            return string::concat(c);
+        }
+        
+        // Note: For int/float, we can rely on the base class because 
+        // string::concat(int) eventually calls string::concat(char*), 
+        // which might resolve back to here if we make it virtual, 
+        // OR we should override them here too to be safe.
+        // For now, these two cover the raw string building blocks.
 };
 
 // Global Print using View

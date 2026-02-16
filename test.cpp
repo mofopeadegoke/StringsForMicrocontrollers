@@ -7,8 +7,17 @@
 #include "string.h"
 
 
-class string_view { //basically const string
-    const char* buffer;
+class string_view { 
+protected:
+    const char* m_data; 
+    size_t m_len;
+
+public:
+    // Constructors
+    string_view() : m_data(nullptr), m_len(0) {}
+    string_view(const char* data, size_t len) : m_data(data), m_len(len) {}
+    
+    // ... all your const functions (find, print, []) go here ...
 };
 
 class string : public string_view{
@@ -46,23 +55,13 @@ class string : public string_view{
         }
 
         string(const char *cstr, int size) : string(size, new char[size + 1]) {
-            string::operator=(cstr);
-        }
-
-        string(const string& other) 
-            : buffer(other.buffer), capacity_(other.capacity_), length(other.length) {
-            if (other.length > capacity_) {
-                printf("WARNING: String truncation in constructor! Cap: %zu, Src: %zu\n", capacity_, other.length);
-            }
-
-            size_t to_copy = (other.length < capacity_) ? other.length : capacity_;
-
-            if (to_copy > 0) {
-                memcpy(buffer, other.buffer, to_copy);
-            }
-
-            length = to_copy;
+            memcpy(buffer, cstr, size);
+            length = size;
             buffer[length] = '\0';
+            
+            // Sync the view
+            m_data = buffer; 
+            m_len = length;
         }
         size_t size() const { return length; };
         size_t capacity() const { return capacity_; };
@@ -79,27 +78,25 @@ class string : public string_view{
             }
             return buffer[index];
         }
-        string& operator=(const char* str) {
-            if (str == nullptr) {
-                length = 0;
-                buffer[0] = '\0';
-                return *this;
+        string(const string& other) 
+            : string_view(nullptr, 0), 
+            buffer(nullptr),         
+            capacity_(other.capacity_) 
+        {
+            buffer = new char[capacity_ + 1];    
+            if (other.length > capacity_) {
+                printf("WARNING: String truncation! Cap: %zu, Src: %zu\n", capacity_, other.length);
             }
-            size_t str_len = strlen(str);
-            // Check if the incoming string is longer than what we can hold
-            if (str_len > capacity_) {
-                printf("WARNING: String truncation! Source length %zu exceeds capacity %zu\n", str_len, capacity_);
-            }
-            size_t to_copy = (str_len < capacity_) ? str_len : capacity_;
-
+            size_t to_copy = (other.length < capacity_) ? other.length : capacity_;
+            
             if (to_copy > 0) {
-                memcpy(buffer, str, to_copy);
+                memcpy(buffer, other.buffer, to_copy);
             }
 
             length = to_copy;
             buffer[length] = '\0';
-
-            return *this;
+            m_data = buffer;
+            m_len = length;
         }
         string& operator=(const string& other) {
             if (this != &other) {

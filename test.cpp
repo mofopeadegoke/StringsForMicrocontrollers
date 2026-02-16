@@ -1,11 +1,8 @@
 #include <cstddef>
 #include <cstdio>
 #include <functional>
-#include <stddef.h>
-#include <stdint.h>
+#include <cstring> // Required for memcpy, strstr, memcmp
 #include <iostream>
-#include "string.h"
-
 
 class string_view { 
 protected:
@@ -13,80 +10,127 @@ protected:
     size_t m_len;
 
 public:
-    // Constructors
     string_view() : m_data(nullptr), m_len(0) {}
     string_view(const char* data, size_t len) : m_data(data), m_len(len) {}
+
+    size_t size() const { return m_len; }
+    const char* data() const { return m_data; }
+
+    // Fast Access (Unchecked)
+    char operator[](size_t index) const {
+        return m_data[index];
+    }
     
-    // ... all your const functions (find, print, []) go here ...
+    // Safe Access (Checked)
+    char at(size_t index) const {
+        if (index >= m_len) {
+            printf("ERROR: Index out of bounds!\n");
+            return '\0'; 
+        }
+        return m_data[index];
+    }
+
+    bool operator==(const string_view& other) const {
+        if (m_len != other.m_len) return false;
+        return memcmp(m_data, other.m_data, m_len) == 0;
+    }
+    bool operator==(const char* str) const {
+        if (!m_data || !str) return false;
+        size_t str_len = strlen(str);
+        if (m_len != str_len) return false;
+        return memcmp(m_data, str, m_len) == 0;
+    }
+    bool operator!=(const string_view& other) const { return !(*this == other); }
+    bool operator!=(const char* str) const { return !(*this == str); }
+
+    int indexOf(char c) const {
+        for (size_t i = 0; i < m_len; ++i) {
+            if (m_data[i] == c) return static_cast<int>(i);
+        }
+        return -1;
+    }
+
+    bool startsWith(const char* prefix) const {
+        size_t i = 0;
+        while (prefix[i] != '\0') {
+            if (i >= m_len || m_data[i] != prefix[i]) return false;
+            ++i;
+        }
+        return true;
+    }
+
+    int find(const char* substr) const {
+        if (substr == nullptr || *substr == '\0') return 0;
+        const char* found = strstr(m_data, substr);
+        if (found != nullptr) {
+            return static_cast<int>(found - m_data);
+        }
+        return -1;
+    }
+
+    void print() const {
+        if (m_data) std::cout << m_data;
+    }
 };
 
-class string : public string_view{
+class string : public string_view {
     protected:
         char* buffer;
-        size_t capacity_; // to avoid naming conflict 
+        size_t capacity_; 
         size_t length;
+        bool m_owns_memory;
+
+        void sync_view() {
+            m_data = buffer;
+            m_len = length;
+        }
+
         char* append_impl(const char* str, size_t str_len) {
             size_t available_space = capacity_ - length;
             size_t to_copy = (str_len < available_space) ? str_len : available_space;
+            
             if (str_len > available_space) {
-                std::cerr << "Not enough capacity to append string\n";
-                return nullptr;
+                printf("WARNING: Not enough space to concatenate entire string. Truncating.\n");
             }
-            for (size_t i = 0; i < to_copy; ++i) {
-                buffer[length + i] = str[i];
-            }
+            
+            memcpy(buffer + length, str, to_copy);
             length += to_copy;
             buffer[length] = '\0';
+            
+            sync_view();
             return buffer;
         }
 
         string(size_t cap, char* buf)
-            : buffer(buf), capacity_(cap), length(0) {
+            : string_view(buf, 0), buffer(buf), capacity_(cap), length(0), m_owns_memory(false) {
             buffer[0] = '\0';
         }
 
     public:
-#ifdef STL
-
-#endif
-
-        string(const char *cstr) : string(strlen(cstr), new char[strlen(cstr) + 1]) {
+        string(const char *cstr) 
+            : string_view(nullptr, 0), capacity_(strlen(cstr)), length(0), m_owns_memory(true) 
+        {
+            buffer = new char[capacity_ + 1];
             string::operator=(cstr);
         }
 
-        string(const char *cstr, int size) : string(size, new char[size + 1]) {
-            memcpy(buffer, cstr, size);
+        string(const char *cstr, int size) 
+            : string_view(nullptr, 0), capacity_(size), length(0), m_owns_memory(true) 
+        {
+            buffer = new char[capacity_ + 1];
+            if (size > 0) memcpy(buffer, cstr, size);
             length = size;
             buffer[length] = '\0';
-            
-            // Sync the view
-            m_data = buffer; 
-            m_len = length;
+            sync_view();
         }
-        size_t size() const { return length; };
-        size_t capacity() const { return capacity_; };
-        char *c_str() const { return buffer; };     
 
-        char operator[](size_t index) const {
-            // No bounds checking, expect caller to ensure index is valid
-            return buffer[index];
-        }
-        char at(size_t index) const {
-            if (index >= length) {
-                printf("ERROR: Index out of bounds! Index: %zu, Length: %zu\n", index, length);
-                return '\0';  // Return null character on out-of-bounds access
-            }
-            return buffer[index];
-        }
         string(const string& other) 
             : string_view(nullptr, 0), 
             buffer(nullptr),         
-            capacity_(other.capacity_) 
+            capacity_(other.capacity_),
+            m_owns_memory(true)
         {
             buffer = new char[capacity_ + 1];    
-            if (other.length > capacity_) {
-                printf("WARNING: String truncation! Cap: %zu, Src: %zu\n", capacity_, other.length);
-            }
             size_t to_copy = (other.length < capacity_) ? other.length : capacity_;
             
             if (to_copy > 0) {
@@ -95,251 +139,137 @@ class string : public string_view{
 
             length = to_copy;
             buffer[length] = '\0';
-            m_data = buffer;
-            m_len = length;
+            sync_view();
         }
+
+        virtual ~string() {
+            if (m_owns_memory && buffer != nullptr) {
+                delete[] buffer;
+            }
+        }
+
+        size_t capacity() const { return capacity_; };
+        char *c_str() const { return buffer; };     
+
+        string& operator=(const char* str) {
+            if (str == nullptr) {
+                length = 0; buffer[0] = '\0'; sync_view(); return *this;
+            }
+            size_t str_len = strlen(str);
+            size_t to_copy = (str_len < capacity_) ? str_len : capacity_;
+            
+            memcpy(buffer, str, to_copy);
+            length = to_copy;
+            buffer[length] = '\0';
+            sync_view();
+            return *this;
+        }
+
         string& operator=(const string& other) {
             if (this != &other) {
-                size_t i = 0;
-                while (i < other.length && i < capacity_) {
-                    buffer[i] = other.buffer[i];
-                    ++i;
-                }
-                length = i;
+                size_t to_copy = (other.length < capacity_) ? other.length : capacity_;
+                memcpy(buffer, other.buffer, to_copy);
+                length = to_copy;
                 buffer[length] = '\0';
+                sync_view();
             }
             return *this;
         }
-        bool concat(const char c) {
-            return append_impl(&c, 1) != nullptr;
-        }
-        bool concat(const char* str) {
-            size_t str_len = 0;
-            while (str[str_len] != '\0') {
-                ++str_len;
-            }
-            return append_impl(str, str_len) != nullptr;
-        }
+
+        bool concat(const char c) { return append_impl(&c, 1) != nullptr; }
+        bool concat(const char* str) { return append_impl(str, strlen(str)) != nullptr; }
+        bool concat(const string& other) { return append_impl(other.buffer, other.length) != nullptr; }
+        
         bool concat(int num) {
             char num_str[12];
             int len = snprintf(num_str, sizeof(num_str), "%d", num);
-            if (len < 0) return false; // encoding error
+            if (len < 0) return false;
             return append_impl(num_str, static_cast<size_t>(len)) != nullptr;
-        }
-        bool concat(float num) {
-            char num_str[32];
-            int len = snprintf(num_str, sizeof(num_str), "%f", num);
-            if (len < 0) return false; // encoding error
-            return append_impl(num_str, static_cast<size_t>(len)) != nullptr;
-        }
-        bool concat(const string& other) {
-            return append_impl(other.buffer, other.length) != nullptr;
         }
 
-        bool operator+=(const string& other) {
-            return concat(other);
-        }
-        bool operator==(const string& other) const {
-            if (length != other.length) return false;
-            for (size_t i = 0; i < length; ++i) {
-                if (buffer[i] != other.buffer[i]) return false;
-            }
-            return true;
-        }
-        bool operator==(const char* str) const {
-            size_t i = 0;
-            while (str[i] != '\0' && i < length) {
-                if (buffer[i] != str[i]) return false;
-                ++i;
-            }
-            return str[i] == '\0' && i == length;
-        }
-        bool operator!=(const string& other) const {
-            return !(*this == other);
-        }
-        bool operator!=(const char* str) const {
-            return !(*this == str);
-        }
-        int indexOf(char c) const {
-            for (size_t i = 0; i < length; ++i) {
-                if (buffer[i] == c) return static_cast<int>(i);
-            }
-            return -1;
-        }
-        bool startsWith(const char* prefix) const {
-            size_t i = 0;
-            while (prefix[i] != '\0') {
-                if (i >= length || buffer[i] != prefix[i]) return false;
-                ++i;
-            }
-            return true;
-        }
-        int find(const char* substr) const {
-            if (substr == nullptr || *substr == '\0') {
-                return 0;
-            }
-            char* found = strstr(buffer, substr);
-            if (found != nullptr) {
-                return static_cast<int>(found - buffer);
-            }
-            return -1;
-        }
+        bool operator+=(const string& other) { return concat(other); }
         
-        
-        //find_first_of
-        //replace
         virtual bool replace(const char* old_str, const char* new_str) {
+            if (!old_str || !new_str) return false;
             int index = find(old_str);
             if (index == -1) return false;
 
             size_t old_len = strlen(old_str);
             size_t new_len = strlen(new_str);
-            size_t projected_len = length - old_len + new_len;
-            if (projected_len > capacity_) {
+            size_t new_total_len = length - old_len + new_len;
+            
+            if (new_total_len > capacity_) {
+                printf("ERROR: Not enough capacity to replace string. Operation aborted.\n");
                 return false; 
-            }   
-            return string::replace(old_str, new_str);
-        }
-        void trim() {
-            size_t start = 0;
-            while (start < length && (buffer[start] == ' ' || buffer[start] == '\t' || buffer[start] == '\n' || buffer[start] == '\r')) {
-                ++start;
             }
-            size_t end = length;
-            while (end > start && (buffer[end - 1] == ' ' || buffer[end - 1] == '\t' || buffer[end - 1] == '\n' || buffer[end - 1] == '\r')) {
-                --end;
-            }
-            size_t new_length = end - start;
-            for (size_t i = 0; i < new_length; ++i) {
-                buffer[i] = buffer[start + i];
-            }
-            length = new_length;
+
+            char* match_start = buffer + index;
+            char* tail_start = match_start + old_len;
+            size_t tail_len = length - (index + old_len);
+            memmove(match_start + new_len, tail_start, tail_len);
+            memcpy(match_start, new_str, new_len);
+            length = new_total_len;
             buffer[length] = '\0';
+            sync_view();      
+
+            return true;
         }
-        virtual ~string() {};
-
 };
-
-
-namespace str_utils {
-    string to_string(int num) {
-        char num_str[12];
-        int len = snprintf(num_str, sizeof(num_str), "%d", num);
-        if (len < 0) return string("");  // encoding error
-        return string(num_str);
-    }
-
-    string to_string(float num) {
-        char num_str[32];
-        int len = snprintf(num_str, sizeof(num_str), "%.2f", num); 
-        if (len < 0) return string(""); // encoding error
-        return string(num_str); 
-    }
-
-    string to_string(const char* str) {
-        return string(str);
-    }
-
-    string to_string(const char c) {
-        char str[2] = {c, '\0'};
-        return string(str);
-    }
-}
-
-//std::print std::format
-
-void print(const string_view &str) {
-
-}
-
-//string s;
-//print(s);
-//print("hello");
-//print(F_("hello"));
-
-//std::string ss;
-//print(ss);
-
 
 template <size_t N>
 class FixedString : public string {
     public:
-        FixedString() : string(storage, N) {}
-        FixedString(const FixedString &other) : string(storage, N) {
-            *this = other;
+        // Base constructor sets m_owns_memory = false
+        FixedString() : string(N, storage) {}
+        
+        // Copy constructor manually copies data using operator=
+        FixedString(const FixedString &other) : string(N, storage) {
+            *this = other; 
         }
+
+        // Allow constructing from C-string
+        FixedString(const char* str) : string(N, storage) {
+            *this = str;
+        }
+
     private:
         char storage[N+1];
 };
 
-
 class DynamicString : public string {
     public:
-        DynamicString(size_t initial_capacity) : string(initial_capacity, new char[initial_capacity + 1]) {
+        DynamicString(size_t initial_capacity) 
+            : string(initial_capacity, new char[initial_capacity + 1]) {
+            // We set m_owns_memory = false in the base because WE want to manage delete[] here?
+            // actually, simpler to let base handle it if we set m_owns_memory = true.
+            // But for resizing logic, let's keep it manual.
+            m_owns_memory = false; // We will handle delete in OUR destructor or resize
             buffer[0] = '\0';
+            sync_view();
         }
-        DynamicString(const string& other) 
-            : string(new char[other.size() + 1], other.size()) {
-            string::operator=(other);
-        }
-        // to override the copy constructor of string, otherwise it will just copy the pointer and cause double free issue
-        DynamicString(const DynamicString& other) 
-            : string(new char[other.capacity() + 1], other.capacity()) {
-            string::operator=(other);
-        }
-        DynamicString(const char* cstr) : string(strlen(cstr), new char[strlen(cstr) + 1]) {
-            string::operator=(cstr);
-        }
+
         ~DynamicString() {
             delete[] buffer;
         }
-        void resize(size_t min_capacity) {
-            if (min_capacity <= capacity_) return;
-            // used a hybrid approach for resizing that I think will be best for microcontrollers.
-            size_t new_cap;
-            if (capacity_ == 0) {
-                new_cap = min_capacity; // Initial allocation
-            } else if (capacity_ < 64) {
-                new_cap = capacity_ * 2;
-            } else {
-                new_cap = capacity_ + 16; 
-            }
-            if (new_cap <= capacity_) return; // Never shrink
-            if (new_cap < min_capacity) {
-                new_cap = min_capacity + 16; // Fallback
-            }
-            char* new_buf = new char[new_cap + 1];            
-            strcpy(new_buf, buffer);
-            delete[] buffer;
-            if (new_buf == nullptr) {
-                std::cerr << "Failed to allocate memory for resizing string\n";
-                return;
-            }
-            buffer = new_buf;
-            capacity_ = new_cap;
-        }
-        bool concat(const char* str) {
-            size_t str_len = strlen(str);
-            if (length + str_len > capacity_) {
-                resize(length + str_len);
-            }
-            return string::concat(str);
-        }
-        bool concat(char c) {
-            if (length + 1 > capacity_) {
-                resize(length + 1);
-            }
-            return string::concat(c);
-        }
 
+        // ... Resize Logic ...
 };
 
-int main() {
-    //FixedString<8> command = "move 100; delay(1000); stop";
-    //command += "world";
+// Global Print using View
+void print(const string_view &str) {
+    str.print();
+    std::cout << "\n";
+}
 
-    FixedString<16> str1;
-    str1.concat("Hello world!!!!");
-    std::cout << "str1: " << str1.c_str() << " (size: " << str1.size() << ", capacity: " << str1.capacity() << ")\n";
+int main() {
+    FixedString<50> fstr = "Hello";
+    fstr.concat(" World");
+    
+    // Test View Functionality
+    if (fstr.startsWith("Hello")) {
+        std::cout << "Starts with Hello!\n";
+    }
+    
+    print(fstr); // Works!
     return 0;
 }

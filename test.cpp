@@ -3,6 +3,8 @@
 #include <functional>
 #include <cstring>
 #include <iostream>
+#include <utility> // std::move
+#include <algorithm> // std::min
 
 class string_view { 
 protected:
@@ -11,17 +13,19 @@ protected:
 
 public:
     string_view() : m_data(nullptr), m_len(0) {}
+    string_view(const char* data) : m_data(data) {
+        m_len = (data) ? strlen(data) : 0;
+    }
     string_view(const char* data, size_t len) : m_data(data), m_len(len) {}
 
     size_t size() const { return m_len; }
+
     const char* data() const { return m_data; }
 
-    // Fast Access (Unchecked)
     char operator[](size_t index) const {
-        return m_data[index];
+        return m_data[index]; 
     }
     
-    // Safe Access (Checked)
     char at(size_t index) const {
         if (index >= m_len) {
             printf("ERROR: Index out of bounds!\n");
@@ -30,18 +34,30 @@ public:
         return m_data[index];
     }
 
-    bool operator==(const string_view& other) const {
-        if (m_len != other.m_len) return false;
-        return memcmp(m_data, other.m_data, m_len) == 0;
+    // --- MANUAL COMPARISON OPERATORS (Replacing <=>) cause of c++ 20 error ---
+    int compare(const string_view& other) const {
+        size_t min_len = (m_len < other.m_len) ? m_len : other.m_len;
+        
+        const char* d1 = m_data ? m_data : "";
+        const char* d2 = other.m_data ? other.m_data : "";
+        
+        int cmp = memcmp(d1, d2, min_len);
+        if (cmp != 0) return cmp;
+        
+        if (m_len < other.m_len) return -1;
+        if (m_len > other.m_len) return 1;
+        return 0;
     }
-    bool operator==(const char* str) const {
-        if (!m_data || !str) return false;
-        size_t str_len = strlen(str);
-        if (m_len != str_len) return false;
-        return memcmp(m_data, str, m_len) == 0;
-    }
-    bool operator!=(const string_view& other) const { return !(*this == other); }
-    bool operator!=(const char* str) const { return !(*this == str); }
+
+    bool operator==(const string_view& other) const { return compare(other) == 0; }
+    bool operator!=(const string_view& other) const { return compare(other) != 0; }
+    bool operator<(const string_view& other) const  { return compare(other) < 0; }
+    bool operator>(const string_view& other) const  { return compare(other) > 0; }
+    bool operator<=(const string_view& other) const { return compare(other) <= 0; }
+    bool operator>=(const string_view& other) const { return compare(other) >= 0; }
+
+    bool operator==(const char* str) const { return compare(string_view(str)) == 0; }
+    bool operator!=(const char* str) const { return compare(string_view(str)) != 0; }
 
     int indexOf(char c) const {
         for (size_t i = 0; i < m_len; ++i) {
@@ -50,26 +66,41 @@ public:
         return -1;
     }
 
-    bool startsWith(const char* prefix) const {
-        size_t i = 0;
-        while (prefix[i] != '\0') {
-            if (i >= m_len || m_data[i] != prefix[i]) return false;
-            ++i;
-        }
-        return true;
+    bool startsWith(const string_view& prefix) const {
+        if (prefix.m_len > m_len) return false;
+        if (prefix.m_len == 0) return true;
+        
+        const char* d1 = m_data ? m_data : "";
+        const char* d2 = prefix.m_data ? prefix.m_data : "";
+        
+        return memcmp(d1, d2, prefix.m_len) == 0;
     }
 
-    int find(const char* substr) const {
-        if (substr == nullptr || *substr == '\0') return 0;
-        const char* found = strstr(m_data, substr);
-        if (found != nullptr) {
-            return static_cast<int>(found - m_data);
+    bool startsWith(const char* prefix) const {
+        return startsWith(string_view(prefix));
+    }
+
+    int find(const string_view& substr) const {
+        if (substr.m_len == 0) return 0;
+        if (substr.m_len > m_len) return -1;
+        
+        const char* d1 = m_data ? m_data : "";
+        const char* d2 = substr.m_data ? substr.m_data : "";
+
+        for (size_t i = 0; i <= m_len - substr.m_len; ++i) {
+            if (memcmp(d1 + i, d2, substr.m_len) == 0) {
+                return static_cast<int>(i);
+            }
         }
         return -1;
     }
 
+    int find(const char* substr) const {
+        return find(string_view(substr));
+    }
+
     void print() const {
-        if (m_data) std::cout << m_data;
+        if (m_data) std::cout.write(m_data, m_len);
     }
 };
 
@@ -77,69 +108,110 @@ class string : public string_view {
     protected:
         char* buffer;
         size_t capacity_; 
-        size_t length;
         bool m_owns_memory;
 
         void sync_view() {
             m_data = buffer;
-            m_len = length;
         }
 
         char* append_impl(const char* str, size_t str_len) {
-            size_t available_space = capacity_ - length;
+            size_t available_space = capacity_ - m_len;
             size_t to_copy = (str_len < available_space) ? str_len : available_space;
             
             if (str_len > available_space) {
-                printf("WARNING: Not enough space to concatenate entire string. Truncating.\n");
+                printf("WARNING: Truncating string append.\n");
             }
             
-            memcpy(buffer + length, str, to_copy);
-            length += to_copy;
-            buffer[length] = '\0';
+            memcpy(buffer + m_len, str, to_copy);
+            m_len += to_copy;
+            buffer[m_len] = '\0';
             
             sync_view();
             return buffer;
         }
 
         string(size_t cap, char* buf)
-            : string_view(buf, 0), buffer(buf), capacity_(cap), length(0), m_owns_memory(false) {
+            : string_view(buf, 0), buffer(buf), capacity_(cap), m_owns_memory(false) {
             buffer[0] = '\0';
         }
 
-    public:
-        string(const char *cstr) 
-            : string_view(nullptr, 0), capacity_(strlen(cstr)), length(0), m_owns_memory(true) 
-        {
-            buffer = new char[capacity_ + 1];
-            string::operator=(cstr);
+        static size_t calc_min_cap(size_t req) {
+            return (req < 8) ? 8 : req;
         }
 
-        string(const char *cstr, int size) 
-            : string_view(nullptr, 0), capacity_(size), length(0), m_owns_memory(true) 
+    public:
+        const char *c_str() const { return buffer; };  
+        char* data() { return buffer; }
+        size_t capacity() const { return capacity_; };
+
+        string(const char *cstr) 
+            : string_view(nullptr, 0), capacity_(0), m_owns_memory(true) 
+        {
+            size_t len = (cstr) ? strlen(cstr) : 0;
+            capacity_ = calc_min_cap(len); // Enforce min 8
+            
+            buffer = new char[capacity_ + 1];
+            if (len > 0) memcpy(buffer, cstr, len);
+            m_len = len;
+            buffer[m_len] = '\0';
+            sync_view();
+        }
+        string(const char *data, size_t size) 
+            : string_view(nullptr, 0), capacity_(calc_min_cap(size)), m_owns_memory(true) 
         {
             buffer = new char[capacity_ + 1];
-            if (size > 0) memcpy(buffer, cstr, size);
-            length = size;
-            buffer[length] = '\0';
+            if (size > 0 && data) memcpy(buffer, data, size);
+            m_len = size;
+            buffer[m_len] = '\0';
+            sync_view();
+        }
+
+        string(const string_view& sv) 
+            : string_view(nullptr, 0), capacity_(calc_min_cap(sv.size())), m_owns_memory(true) 
+        {
+            buffer = new char[capacity_ + 1];
+            if (sv.size() > 0) memcpy(buffer, sv.data(), sv.size());
+            m_len = sv.size();
+            buffer[m_len] = '\0';
             sync_view();
         }
 
         string(const string& other) 
-            : string_view(nullptr, 0), 
-            buffer(nullptr),         
-            capacity_(other.capacity_),
-            m_owns_memory(true)
+            : string_view(nullptr, 0), buffer(nullptr), capacity_(calc_min_cap(other.capacity_)), m_owns_memory(true)
         {
             buffer = new char[capacity_ + 1];    
-            size_t to_copy = (other.length < capacity_) ? other.length : capacity_;
-            
-            if (to_copy > 0) {
-                memcpy(buffer, other.buffer, to_copy);
-            }
-
-            length = to_copy;
-            buffer[length] = '\0';
+            size_t to_copy = (other.m_len < capacity_) ? other.m_len : capacity_;
+            if (to_copy > 0) memcpy(buffer, other.buffer, to_copy);
+            m_len = to_copy;
+            buffer[m_len] = '\0';
             sync_view();
+        }
+
+
+        string(string&& other) noexcept
+            : string_view(nullptr, 0), buffer(nullptr), capacity_(0), m_owns_memory(false)
+        {
+            *this = std::move(other);
+        }
+
+        string& operator=(string&& other) noexcept {
+            if (this != &other) {
+                if (m_owns_memory && buffer) delete[] buffer;
+                
+                buffer = other.buffer;
+                capacity_ = other.capacity_;
+                m_owns_memory = other.m_owns_memory;
+                
+                m_data = buffer;
+                m_len = other.m_len;
+
+                other.buffer = nullptr;
+                other.m_data = nullptr;
+                other.m_len = 0;
+                other.capacity_ = 0;
+                other.m_owns_memory = false;
+            }
+            return *this;
         }
 
         virtual ~string() {
@@ -148,43 +220,60 @@ class string : public string_view {
             }
         }
 
-        size_t capacity() const { return capacity_; };
-        char *c_str() const { return buffer; };     
+        char& operator[](size_t index) { return buffer[index]; }
+
+        char& at(size_t index) {
+            if (index >= m_len) {
+                printf("ERROR: Index out of bounds!\n");
+                return buffer[m_len > 0 ? m_len - 1 : 0]; 
+            }
+            return buffer[index];
+        }
 
         string& operator=(const char* str) {
             if (str == nullptr) {
-                length = 0; buffer[0] = '\0'; sync_view(); return *this;
+                m_len = 0; buffer[0] = '\0'; sync_view(); return *this;
             }
             size_t str_len = strlen(str);
             size_t to_copy = (str_len < capacity_) ? str_len : capacity_;
             
             memcpy(buffer, str, to_copy);
-            length = to_copy;
-            buffer[length] = '\0';
+            m_len = to_copy;
+            buffer[m_len] = '\0';
             sync_view();
             return *this;
         }
 
         string& operator=(const string& other) {
             if (this != &other) {
-                size_t to_copy = (other.length < capacity_) ? other.length : capacity_;
+                size_t to_copy = (other.m_len < capacity_) ? other.m_len : capacity_;
                 memcpy(buffer, other.buffer, to_copy);
-                length = to_copy;
-                buffer[length] = '\0';
+                m_len = to_copy;
+                buffer[m_len] = '\0';
                 sync_view();
             }
             return *this;
         }
 
         virtual bool concat(const char c) { return append_impl(&c, 1) != nullptr; }
-        virtual bool concat(const char* str) { return append_impl(str, strlen(str)) != nullptr; }
-        virtual bool concat(const string& other) { return append_impl(other.buffer, other.length) != nullptr; }
-
+        virtual bool concat(const char* str) { 
+            if (!str) return false;
+            return append_impl(str, strlen(str)) != nullptr; 
+        }
+        virtual bool concat(const string_view& sv) { 
+            return append_impl(sv.data(), sv.size()) != nullptr; 
+        }
         virtual bool concat(int num) {
             char num_str[12];
             int len = snprintf(num_str, sizeof(num_str), "%d", num);
             if (len < 0) return false;
-            return append_impl(num_str, static_cast<size_t>(len)) != nullptr;
+            return concat(string_view(num_str, len)); 
+        }
+        virtual bool concat(float num) {
+            char num_str[32];
+            int len = snprintf(num_str, sizeof(num_str), "%.2f", num); 
+            if (len < 0) return false;
+            return concat(string_view(num_str, len));
         }
 
         bool operator+=(const string& other) { return concat(other); }
@@ -196,58 +285,44 @@ class string : public string_view {
 
             size_t old_len = strlen(old_str);
             size_t new_len = strlen(new_str);
-            size_t new_total_len = length - old_len + new_len;
+            size_t new_total_len = m_len - old_len + new_len;
             
-            if (new_total_len > capacity_) {
-                printf("ERROR: Not enough capacity to replace string. Operation aborted.\n");
-                return false; 
-            }
+            if (new_total_len > capacity_) return false; 
 
             char* match_start = buffer + index;
             char* tail_start = match_start + old_len;
-            size_t tail_len = length - (index + old_len);
+            size_t tail_len = m_len - (index + old_len);
+            
             memmove(match_start + new_len, tail_start, tail_len);
             memcpy(match_start, new_str, new_len);
-            length = new_total_len;
-            buffer[length] = '\0';
+            
+            m_len = new_total_len;
+            buffer[m_len] = '\0';
             sync_view();      
-
             return true;
         }
 };
 
-namespace str_utils {
-    string to_string(int num) {
-        char num_str[12];
-        int len = snprintf(num_str, sizeof(num_str), "%d", num);
-        if (len < 0) return string("");  // encoding error
-        return string(num_str);
-    }
-    string to_string(float num) {
-        char num_str[32];
-        int len = snprintf(num_str, sizeof(num_str), "%.2f", num); 
-        if (len < 0) return string(""); // encoding error
-        return string(num_str); 
-    }
-    string to_string(const char* str) {
-        return string(str);
-    }
-    string to_string(const char c) {
-        char str[2] = {c, '\0'};
-        return string(str);
-    }
+string to_string(int num) {
+    char num_str[12];
+    snprintf(num_str, sizeof(num_str), "%d", num);
+    return string(num_str);
 }
+string to_string(float num) {
+    char num_str[32];
+    snprintf(num_str, sizeof(num_str), "%.2f", num); 
+    return string(num_str); 
+}
+string to_string(const char* str) { return string(str); }
+string to_string(const char c) { char str[2] = {c, '\0'}; return string(str); }
+
 
 template <size_t N>
 class FixedString : public string {
     public:
         FixedString() : string(N, storage) {}
-        FixedString(const FixedString &other) : string(N, storage) {
-            *this = other; 
-        }
-        FixedString(const char* str) : string(N, storage) {
-            *this = str;
-        }
+        FixedString(const FixedString &other) : string(N, storage) { *this = other; }
+        FixedString(const char* str) : string(N, storage) { *this = str; }
 
     private:
         char storage[N+1];
@@ -255,103 +330,99 @@ class FixedString : public string {
 
 class DynamicString : public string {
     public:
+       
         DynamicString(size_t initial_capacity) 
-            : string(initial_capacity, new char[initial_capacity + 1]) {
+            : string(calc_min_cap(initial_capacity), new char[calc_min_cap(initial_capacity) + 1]) {
             m_owns_memory = true;
             buffer[0] = '\0';
             sync_view();
         }
 
         DynamicString(const char* cstr) 
-            : string(strlen(cstr), new char[strlen(cstr) + 1]) {
-            m_owns_memory = true;
-            string::operator=(cstr);
+            : string(cstr) {    
         }
 
         DynamicString(const string& other) 
-            : string(new char[other.size() + 1], other.size()) { 
+            : string(calc_min_cap(other.capacity()), new char[calc_min_cap(other.capacity()) + 1]) { 
              m_owns_memory = true;
              string::operator=(other); 
         }
 
-        ~DynamicString() {
-            if (buffer) {
-                delete[] buffer;
-                buffer = nullptr;
-            }
-        }
+        DynamicString(DynamicString&& other) noexcept : string(std::move(other)) {}
 
         void resize(size_t min_capacity) {
             if (min_capacity <= capacity_) return;
             size_t new_cap;
-            if (capacity_ == 0) {
-                new_cap = min_capacity;
-            } else if (capacity_ < 64) {
-                new_cap = capacity_ * 2;
-            } else {
-                new_cap = capacity_ + 16; 
-            }
             
-            if (new_cap < min_capacity) {
-                new_cap = min_capacity + 16; 
-            }
+            if (capacity_ == 0) new_cap = min_capacity;
+            else if (capacity_ < 64) new_cap = capacity_ * 2;
+            else new_cap = capacity_ + 16; 
+            
+            if (new_cap < min_capacity) new_cap = min_capacity + 16; 
+            if (new_cap < 8) new_cap = 8; // Enforce min 8
 
             char* new_buf = new char[new_cap + 1];
             if (!new_buf) return;
 
-            if (length > 0) {
-                memcpy(new_buf, buffer, length);
-            }
-            new_buf[length] = '\0';
+            if (m_len > 0) memcpy(new_buf, buffer, m_len);
+            new_buf[m_len] = '\0';
 
             delete[] buffer;
-
             buffer = new_buf;
             capacity_ = new_cap;
-            
             sync_view();
         }
 
-        
-        bool concat(const char* str) {
+        bool concat(const char* str) override {
             if (str == nullptr) return false;
             size_t str_len = strlen(str);
-            
-            if (length + str_len > capacity_) {
-                resize(length + str_len);
-            }
-            
+            if (m_len + str_len > capacity_) resize(m_len + str_len);
             return string::concat(str);
         }
 
-        bool concat(char c) {
-            if (length + 1 > capacity_) {
-                resize(length + 1);
-            }
-            
+        bool concat(char c) override {
+            if (m_len + 1 > capacity_) resize(m_len + 1);
             return string::concat(c);
         }
-        bool concat(const string& other) {
-            return concat(other.c_str());
+        
+        bool concat(const string_view& sv) override {
+            if (m_len + sv.size() > capacity_) resize(m_len + sv.size());
+            return string::concat(sv);
         }
 
-};
+        bool replace(const char* old_str, const char* new_str) override {
+            int index = find(old_str);
+            if (index == -1) return false;
 
-// Global Print using View
-void print(const string_view &str) {
-    str.print();
-    std::cout << "\n";
-}
+            size_t old_len = strlen(old_str);
+            size_t new_len = strlen(new_str);
+            
+            size_t projected_len;
+            if (new_len >= old_len) projected_len = m_len + (new_len - old_len);
+            else projected_len = m_len - (old_len - new_len);
+
+            if (projected_len > capacity_) {
+                resize(projected_len);
+            }
+            return string::replace(old_str, new_str);
+        }
+};
 
 int main() {
     FixedString<50> fstr = "Hello";
     fstr.concat(" World");
     
-    // Test View Functionality
-    if (fstr.startsWith("Hello")) {
-        std::cout << "Starts with Hello!\n";
-    }
+    DynamicString dstr = "Dynamic";
+    dstr.concat(12345); // Should trigger resize if needed
+
+    std::cout << fstr.data() << "\n";
+    std::cout << dstr.data() << "\n";
     
-    print(fstr); // Works!
+    // Test Move Semantics
+    DynamicString d1 = "MovedString";
+    DynamicString d2 = std::move(d1); // d2 steals from d1
+    std::cout << "d2: " << d2.data() << "\n";
+    // d1 is now empty/null, accessing d1.data() is unsafe unless checked.
+
     return 0;
 }

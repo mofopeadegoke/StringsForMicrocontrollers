@@ -355,6 +355,20 @@ class FixedString : public string {
             string::operator=(str); 
         }
 
+        FixedString(const char* buffer, size_t len) : string(N, storage) {
+            size_t to_copy = (len < N) ? len : N;
+            if (len > N) {
+                printf("WARNING: Truncating string initialization.\n");
+            }
+            if (buffer && to_copy > 0) {
+                memcpy(storage, buffer, to_copy);
+            }
+            storage[to_copy] = '\0';
+            m_len = to_copy;
+            sync_view();
+        }
+        
+
     private:
         char storage[N+1];
 };

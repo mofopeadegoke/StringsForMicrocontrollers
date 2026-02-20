@@ -220,6 +220,22 @@ class string : public string_view {
             return *this;
         }
 
+        #if defined(ARDUINO)
+            
+            string(const String& ard_str)
+                : string_view(nullptr, 0), capacity_(calc_min_cap(ard_str.length())), m_owns_memory(true)
+            {
+                buffer = new char[capacity_ + 1];
+                if (ard_str.length() > 0) memcpy(buffer, ard_str.c_str(), ard_str.length());
+                m_len = ard_str.length();
+                buffer[m_len] = '\0';
+                sync_view();
+            }
+            operator String() const {
+                return String(buffer);
+            }
+        #endif
+
         virtual ~string() {
             if (m_owns_memory && buffer != nullptr) {
                 delete[] buffer;

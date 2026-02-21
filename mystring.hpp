@@ -17,6 +17,14 @@ public:
     }
     string_view(const char* data, size_t len) : m_data(data), m_len(len) {}
 
+    string_view(const std::string& std_str) 
+        : m_data(std_str.data()), m_len(std_str.length()) {}
+
+    operator std::string() const {
+        if (!m_data || m_len == 0) return std::string();
+        return std::string(m_data, m_len);
+    }
+
     size_t size() const { return m_len; }
 
     const char* data() const { return m_data; }
@@ -218,6 +226,20 @@ class string : public string_view {
                 other.m_owns_memory = false;
             }
             return *this;
+        }
+
+        string(const std::string& std_str) 
+        : string_view(nullptr, 0), capacity_(calc_min_cap(std_str.length())), m_owns_memory(true) 
+        {
+            buffer = new char[capacity_ + 1];
+            if (!std_str.empty()) memcpy(buffer, std_str.data(), std_str.length());
+            m_len = std_str.length();
+            buffer[m_len] = '\0';
+            sync_view();
+        }
+        operator std::string() const {
+            if (!buffer || m_len == 0) return std::string();
+            return std::string(buffer, m_len);
         }
 
         #if defined(ARDUINO)

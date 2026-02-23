@@ -1,8 +1,18 @@
-#include <cstddef>
-#include <cstdio>
-#include <cstring>
+#pragma once
+#include <stddef.h>
+#include <stdio.h>
+#include <string.h>
+
+// 1. Conditionally include PC/C++20 headers
+#ifndef ARDUINO
 #include <iostream>
-#include <utility> // std::move
+#endif
+
+#if __cplusplus >= 202002L
+#include <compare>
+#endif
+
+// 2. STL string checks
 #if defined(__has_include)
 #  if __has_include(<string>)
 #    include <string>
@@ -13,8 +23,17 @@
 #    define HAS_STL_STRING_VIEW
 #  endif
 #endif
+
+// 3. Arduino Checks
 #if defined(ARDUINO)
 #include <Arduino.h>
+#endif
+
+// 4. Macro to handle printing errors cross-platform
+#if defined(ARDUINO)
+#define PRINT_WARNING(msg) if(Serial) Serial.println(msg)
+#else
+#define PRINT_WARNING(msg) printf("%s\n", msg)
 #endif
 
 class string_view { 
@@ -40,7 +59,6 @@ public:
     #endif
 
     size_t size() const { return m_len; }
-
     const char* data() const { return m_data; }
 
     char operator[](size_t index) const {
@@ -49,11 +67,12 @@ public:
     
     char at(size_t index) const {
         if (index >= m_len) {
-            printf("ERROR: Index out of bounds!\n");
+            PRINT_WARNING("ERROR: Index out of bounds!");
             return '\0'; 
         }
         return m_data[index];
     }
+
     int compare(const string_view& other) const {
         size_t min_len = (m_len < other.m_len) ? m_len : other.m_len;
         
@@ -68,17 +87,25 @@ public:
         return 0;
     }
 
+    // 5. Safely handle C++20 spaceship vs C++11 standard operators
+    #if __cplusplus >= 202002L
     std::strong_ordering operator<=>(const string_view& other) const {
-        // Handle nullptr cases gracefully by treating them as empty strings
         const char* d1 = m_data ? m_data : "";
         const char* d2 = other.m_data ? other.m_data : "";
         
-        size_t len = std::min(m_len, other.m_len);
+        // Replaced std::min with ternary to avoid <algorithm> and macro clashes
+        size_t len = (m_len < other.m_len) ? m_len : other.m_len; 
         int cmp = memcmp(d1, d2, len);
         
         if (cmp != 0) return cmp <=> 0;
         return m_len <=> other.m_len;
     }
+    #else
+    bool operator<(const string_view& other) const { return compare(other) < 0; }
+    bool operator>(const string_view& other) const { return compare(other) > 0; }
+    bool operator<=(const string_view& other) const { return compare(other) <= 0; }
+    bool operator>=(const string_view& other) const { return compare(other) >= 0; }
+    #endif
 
     bool operator==(const string_view& other) const { return compare(other) == 0; }
     bool operator!=(const string_view& other) const { return compare(other) != 0; }
@@ -126,7 +153,13 @@ public:
     }
 
     void print() const {
-        if (m_data) std::cout.write(m_data, m_len);
+        if (m_data) {
+            #if defined(ARDUINO)
+            Serial.write((const uint8_t*)m_data, m_len);
+            #else
+            std::cout.write(m_data, m_len);
+            #endif
+        }
     }
 };
 
@@ -136,16 +169,14 @@ class string : public string_view {
         size_t capacity_; 
         bool m_owns_memory;
 
-        void sync_view() {
-            m_data = buffer;
-        }
+        void sync_view() { m_data = buffer; }
 
         char* append_impl(const char* str, size_t str_len) {
             size_t available_space = capacity_ - m_len;
             size_t to_copy = (str_len < available_space) ? str_len : available_space;
             
             if (str_len > available_space) {
-                printf("WARNING: Truncating string append.\n");
+                PRINT_WARNING("WARNING: Truncating string append.");
             }
             
             memcpy(buffer + m_len, str, to_copy);
@@ -161,9 +192,7 @@ class string : public string_view {
             buffer[0] = '\0';
         }
 
-        static size_t calc_min_cap(size_t req) {
-            return (req < 8) ? 8 : req;
-        }
+        static size_t calc_min_cap(size_t req) { return (req < 8) ? 8 : req; }
 
     public:
         const char *c_str() const { return buffer; };  
@@ -174,7 +203,7 @@ class string : public string_view {
             : string_view(nullptr, 0), capacity_(0), m_owns_memory(true) 
         {
             size_t len = (cstr) ? strlen(cstr) : 0;
-            capacity_ = calc_min_cap(len); // Enforce min 8
+            capacity_ = calc_min_cap(len);
             
             buffer = new char[capacity_ + 1];
             if (len > 0) memcpy(buffer, cstr, len);
@@ -182,6 +211,7 @@ class string : public string_view {
             buffer[m_len] = '\0';
             sync_view();
         }
+
         string(const char *data, size_t size) 
             : string_view(nullptr, 0), capacity_(calc_min_cap(size)), m_owns_memory(true) 
         {
@@ -213,11 +243,10 @@ class string : public string_view {
             sync_view();
         }
 
-
         string(string&& other) noexcept
             : string_view(nullptr, 0), buffer(nullptr), capacity_(0), m_owns_memory(false)
         {
-            *this = std::move(other);
+            *this = static_cast<string&&>(other);
         }
 
         string& operator=(string&& other) noexcept {
@@ -227,7 +256,6 @@ class string : public string_view {
                 buffer = other.buffer;
                 capacity_ = other.capacity_;
                 m_owns_memory = other.m_owns_memory;
-                
                 m_data = buffer;
                 m_len = other.m_len;
 
@@ -239,7 +267,6 @@ class string : public string_view {
             }
             return *this;
         }
-
 
         #ifdef HAS_STL_STRING
         string(const std::string& std_str) 
@@ -258,19 +285,18 @@ class string : public string_view {
         #endif
 
         #if defined(ARDUINO)
-            
-            string(const String& ard_str)
-                : string_view(nullptr, 0), capacity_(calc_min_cap(ard_str.length())), m_owns_memory(true)
-            {
-                buffer = new char[capacity_ + 1];
-                if (ard_str.length() > 0) memcpy(buffer, ard_str.c_str(), ard_str.length());
-                m_len = ard_str.length();
-                buffer[m_len] = '\0';
-                sync_view();
-            }
-            operator String() const {
-                return String(buffer);
-            }
+        string(const String& ard_str)
+            : string_view(nullptr, 0), capacity_(calc_min_cap(ard_str.length())), m_owns_memory(true)
+        {
+            buffer = new char[capacity_ + 1];
+            if (ard_str.length() > 0) memcpy(buffer, ard_str.c_str(), ard_str.length());
+            m_len = ard_str.length();
+            buffer[m_len] = '\0';
+            sync_view();
+        }
+        operator String() const {
+            return String(buffer);
+        }
         #endif
 
         virtual ~string() {
@@ -283,7 +309,7 @@ class string : public string_view {
 
         char& at(size_t index) {
             if (index >= m_len) {
-                printf("ERROR: Index out of bounds!\n");
+                PRINT_WARNING("ERROR: Index out of bounds!");
                 return buffer[m_len > 0 ? m_len - 1 : 0]; 
             }
             return buffer[index];
@@ -291,23 +317,20 @@ class string : public string_view {
 
         string& operator=(const char* str) {
             if (str == nullptr) {
-                // Handle null case safely
                 m_len = 0; buffer[0] = '\0'; sync_view(); return *this;
             }
             
             size_t str_len = strlen(str);
             size_t to_copy = (str_len < capacity_) ? str_len : capacity_;
             
-            // Ensure buffer is valid before writing
             if (buffer) {
                 memcpy(buffer, str, to_copy);
                 m_len = to_copy;
                 buffer[m_len] = '\0';
                 sync_view();
             } else {
-                printf("CRITICAL ERROR: Buffer is NULL in operator=\n");
+                PRINT_WARNING("CRITICAL ERROR: Buffer is NULL in operator=");
             }
-            
             return *this;
         }
 
@@ -383,7 +406,6 @@ string to_string(float num) {
 string to_string(const char* str) { return string(str); }
 string to_string(const char c) { char str[2] = {c, '\0'}; return string(str); }
 
-
 template <size_t N>
 class FixedString : public string {
     public:
@@ -406,7 +428,7 @@ class FixedString : public string {
         FixedString(const char* buffer, size_t len) : string(N, storage) {
             size_t to_copy = (len < N) ? len : N;
             if (len > N) {
-                printf("WARNING: Truncating string initialization.\n");
+                PRINT_WARNING("WARNING: Truncating string initialization.");
             }
             if (buffer && to_copy > 0) {
                 memcpy(storage, buffer, to_copy);
@@ -416,10 +438,10 @@ class FixedString : public string {
             sync_view();
         }
         
-
     private:
         char storage[N+1];
 };
+
 class DynamicString : public string {
     public:
         explicit DynamicString(size_t initial_capacity) 
@@ -429,31 +451,27 @@ class DynamicString : public string {
             sync_view();
         }
 
-        DynamicString(const char* cstr) 
-            : string(cstr) {    
-        }
+        DynamicString(const char* cstr) : string(cstr) {}
 
         DynamicString(const DynamicString& other) 
             : string(calc_min_cap(other.capacity()), new char[calc_min_cap(other.capacity()) + 1]) { 
              m_owns_memory = true;
              string::operator=(other); 
         }
-        DynamicString(DynamicString&& other) noexcept : string(std::move(other)) {}
+        DynamicString(DynamicString&& other) noexcept : string(static_cast<DynamicString&&>(other)) {}
 
         using string::operator=; 
 
         DynamicString& operator=(const DynamicString& other) {
             if (this != &other) {
-                if (other.size() > capacity_) {
-                    resize(other.size());
-                }
+                if (other.size() > capacity_) resize(other.size());
                 string::operator=(other);
             }
             return *this;
         }
 
         DynamicString& operator=(DynamicString&& other) noexcept {
-            string::operator=(std::move(other));
+            string::operator=(static_cast<DynamicString&&>(other)); // Fixed for Arduino
             return *this;
         }
 
@@ -466,7 +484,7 @@ class DynamicString : public string {
             else new_cap = capacity_ + 16; 
             
             if (new_cap < min_capacity) new_cap = min_capacity + 16; 
-            if (new_cap < 8) new_cap = 8; // Enforce min 8
+            if (new_cap < 8) new_cap = 8;
 
             char* new_buf = new char[new_cap + 1];
             if (!new_buf) return;
@@ -508,9 +526,7 @@ class DynamicString : public string {
             if (new_len >= old_len) projected_len = m_len + (new_len - old_len);
             else projected_len = m_len - (old_len - new_len);
 
-            if (projected_len > capacity_) {
-                resize(projected_len);
-            }
+            if (projected_len > capacity_) resize(projected_len);
             return string::replace(old_str, new_str);
         }
 };

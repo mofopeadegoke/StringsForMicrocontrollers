@@ -3,7 +3,16 @@
 #include <cstring>
 #include <iostream>
 #include <utility> // std::move
-#include <compare> // std::strong_ordering
+#if defined(__has_include)
+#  if __has_include(<string>)
+#    include <string>
+#    define HAS_STL_STRING
+#  endif
+#  if __has_include(<string_view>)
+#    include <string_view>
+#    define HAS_STL_STRING_VIEW
+#  endif
+#endif
 
 class string_view { 
 protected:
@@ -17,6 +26,7 @@ public:
     }
     string_view(const char* data, size_t len) : m_data(data), m_len(len) {}
 
+    #ifdef HAS_STL_STRING
     string_view(const std::string& std_str) 
         : m_data(std_str.data()), m_len(std_str.length()) {}
 
@@ -24,6 +34,7 @@ public:
         if (!m_data || m_len == 0) return std::string();
         return std::string(m_data, m_len);
     }
+    #endif
 
     size_t size() const { return m_len; }
 
@@ -40,8 +51,6 @@ public:
         }
         return m_data[index];
     }
-
-    // --- MANUAL COMPARISON OPERATORS (Replacing <=>) cause of c++ 20 error ---
     int compare(const string_view& other) const {
         size_t min_len = (m_len < other.m_len) ? m_len : other.m_len;
         
@@ -228,6 +237,8 @@ class string : public string_view {
             return *this;
         }
 
+
+        #ifdef HAS_STL_STRING
         string(const std::string& std_str) 
         : string_view(nullptr, 0), capacity_(calc_min_cap(std_str.length())), m_owns_memory(true) 
         {
@@ -241,6 +252,7 @@ class string : public string_view {
             if (!buffer || m_len == 0) return std::string();
             return std::string(buffer, m_len);
         }
+        #endif
 
         #if defined(ARDUINO)
             
@@ -372,15 +384,11 @@ string to_string(const char c) { char str[2] = {c, '\0'}; return string(str); }
 template <size_t N>
 class FixedString : public string {
     public:
-        // Default Constructor
         FixedString() : string(N, storage) {}
-
-        // Copy Constructor
         FixedString(const FixedString &other) : string(N, storage) { 
             string::operator=(other); 
         }
 
-        //Copy Assignment Operator
         FixedString& operator=(const FixedString &other) {
             if (this != &other) {
                 string::operator=(other); 
@@ -388,7 +396,6 @@ class FixedString : public string {
             return *this;
         }
 
-        // C-String Constructor (Recursion Fixed)
         FixedString(const char* str) : string(N, storage) {
             string::operator=(str); 
         }

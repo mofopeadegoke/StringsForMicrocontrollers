@@ -13,6 +13,9 @@
 #    define HAS_STL_STRING_VIEW
 #  endif
 #endif
+#if defined(ARDUINO)
+#include <Arduino.h>
+#endif
 
 class string_view { 
 protected:
